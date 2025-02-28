@@ -59,34 +59,42 @@ Clarinet.test({
     const plantData = plantInfo.receipts[0].result.expectSome();
     assertEquals(plantData['name'], "Monstera Deliciosa");
     assertEquals(plantData['owner'], wallet1.address);
+    assertEquals(plantData['listed-for-swap'], false);
   }
 });
 
 Clarinet.test({
-  name: "Ensure only owner can create challenges",
+  name: "Ensure plant swap creation works correctly",
   async fn(chain: Chain, accounts: Map<string, Account>) {
-    const deployer = accounts.get('deployer')!;
     const wallet1 = accounts.get('wallet_1')!;
     
+    // First add a plant
     let block = chain.mineBlock([
-      // Owner creating challenge should succeed
-      Tx.contractCall('plant-haven', 'create-challenge', [
-        types.ascii("Summer Growing Challenge"),
-        types.ascii("Grow the biggest tomato"),
-        types.uint(100),
-        types.uint(1000)
-      ], deployer.address),
-      
-      // Non-owner creating challenge should fail
-      Tx.contractCall('plant-haven', 'create-challenge', [
-        types.ascii("Unauthorized Challenge"),
-        types.ascii("Should fail"),
-        types.uint(100),
-        types.uint(1000)
+      Tx.contractCall('plant-haven', 'add-plant', [
+        types.ascii("Monstera Deliciosa"),
+        types.ascii("Beautiful swiss cheese plant"),
+        types.ascii("Water weekly, indirect light")
       ], wallet1.address)
     ]);
     
-    block.receipts[0].result.expectOk();
-    block.receipts[1].result.expectErr(types.uint(100)); // err-owner-only
+    // Then create swap listing
+    let swapBlock = chain.mineBlock([
+      Tx.contractCall('plant-haven', 'create-swap-listing', [
+        types.uint(0),
+        types.ascii("Snake Plant")
+      ], wallet1.address)
+    ]);
+    
+    swapBlock.receipts[0].result.expectOk();
+    
+    // Verify plant is listed for swap
+    let plantInfo = chain.mineBlock([
+      Tx.contractCall('plant-haven', 'get-plant-info', [
+        types.uint(0)
+      ], wallet1.address)
+    ]);
+    
+    const plantData = plantInfo.receipts[0].result.expectSome();
+    assertEquals(plantData['listed-for-swap'], true);
   }
 });
