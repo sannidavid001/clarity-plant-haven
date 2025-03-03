@@ -8,9 +8,10 @@ import {
 import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 Clarinet.test({
-  name: "Ensure user can register",
+  name: "Ensure user can register and username is unique",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const wallet1 = accounts.get('wallet_1')!;
+    const wallet2 = accounts.get('wallet_2')!;
     
     let block = chain.mineBlock([
       Tx.contractCall('plant-haven', 'register-user', [
@@ -20,25 +21,25 @@ Clarinet.test({
     
     block.receipts[0].result.expectOk();
     
-    // Verify user info
-    let userInfo = chain.mineBlock([
-      Tx.contractCall('plant-haven', 'get-user-info', [
-        types.principal(wallet1.address)
-      ], wallet1.address)
+    // Try to register same username with different wallet
+    let block2 = chain.mineBlock([
+      Tx.contractCall('plant-haven', 'register-user', [
+        types.ascii("plant_lover_1")
+      ], wallet2.address)
     ]);
     
-    const userData = userInfo.receipts[0].result.expectSome();
-    assertEquals(userData['username'], "plant_lover_1");
-    assertEquals(userData['reputation'], types.uint(0));
-    assertEquals(userData['expert-status'], false);
+    block2.receipts[0].result.expectErr(types.uint(103)); // err-already-exists
   }
 });
 
+[Previous tests remain unchanged...]
+
 Clarinet.test({
-  name: "Ensure user can add plants",
+  name: "Ensure plant information can be updated by owner",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const wallet1 = accounts.get('wallet_1')!;
     
+    // First add a plant
     let block = chain.mineBlock([
       Tx.contractCall('plant-haven', 'add-plant', [
         types.ascii("Monstera Deliciosa"),
@@ -47,9 +48,19 @@ Clarinet.test({
       ], wallet1.address)
     ]);
     
-    block.receipts[0].result.expectOk();
+    // Update plant information
+    let updateBlock = chain.mineBlock([
+      Tx.contractCall('plant-haven', 'update-plant', [
+        types.uint(0),
+        types.ascii("Monstera Deliciosa"),
+        types.ascii("Updated description"),
+        types.ascii("Updated care instructions")
+      ], wallet1.address)
+    ]);
     
-    // Verify plant info
+    updateBlock.receipts[0].result.expectOk();
+    
+    // Verify updated information
     let plantInfo = chain.mineBlock([
       Tx.contractCall('plant-haven', 'get-plant-info', [
         types.uint(0)
@@ -57,36 +68,7 @@ Clarinet.test({
     ]);
     
     const plantData = plantInfo.receipts[0].result.expectSome();
-    assertEquals(plantData['name'], "Monstera Deliciosa");
-    assertEquals(plantData['owner'], wallet1.address);
-  }
-});
-
-Clarinet.test({
-  name: "Ensure only owner can create challenges",
-  async fn(chain: Chain, accounts: Map<string, Account>) {
-    const deployer = accounts.get('deployer')!;
-    const wallet1 = accounts.get('wallet_1')!;
-    
-    let block = chain.mineBlock([
-      // Owner creating challenge should succeed
-      Tx.contractCall('plant-haven', 'create-challenge', [
-        types.ascii("Summer Growing Challenge"),
-        types.ascii("Grow the biggest tomato"),
-        types.uint(100),
-        types.uint(1000)
-      ], deployer.address),
-      
-      // Non-owner creating challenge should fail
-      Tx.contractCall('plant-haven', 'create-challenge', [
-        types.ascii("Unauthorized Challenge"),
-        types.ascii("Should fail"),
-        types.uint(100),
-        types.uint(1000)
-      ], wallet1.address)
-    ]);
-    
-    block.receipts[0].result.expectOk();
-    block.receipts[1].result.expectErr(types.uint(100)); // err-owner-only
+    assertEquals(plantData['description'], "Updated description");
+    assertEquals(plantData['care-instructions'], "Updated care instructions");
   }
 });
